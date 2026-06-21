@@ -1,0 +1,10 @@
+(* Test executable basis: the FFT library (which pulls in the vendored
+ * sml-complex core) plus the harness and runner. *)
+$(SML_LIB)/basis/basis.mlb
+
+../src/fft.mlb
+
+harness.sml
+test.sml
+entry.sml
+main.sml
