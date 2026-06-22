@@ -101,6 +101,79 @@ struct
       Array.tabulate (outLen, out)
     end
 
+  (* Naive separable 2D DFT oracle: naive DFT along rows, then columns. *)
+  fun naiveDft2 (m : C.t array array) =
+    let
+      val rows = Array.length m
+    in
+      if rows = 0 then Array.fromList []
+      else
+        let
+          val cols = Array.length (Array.sub (m, 0))
+        in
+          if cols = 0 then Array.tabulate (rows, fn _ => Array.fromList [])
+          else
+            let
+              val rowT = Array.tabulate (rows, fn r => naiveDft (Array.sub (m, r)))
+              val result =
+                Array.tabulate (rows, fn _ =>
+                  Array.array (cols, C.complex (0.0, 0.0)))
+              fun doCol c =
+                if c >= cols then ()
+                else
+                  let
+                    val col =
+                      naiveDft (Array.tabulate (rows, fn r =>
+                        Array.sub (Array.sub (rowT, r), c)))
+                    fun writeBack r =
+                      if r >= rows then ()
+                      else
+                        (Array.update (Array.sub (result, r), c,
+                                       Array.sub (col, r));
+                         writeBack (r + 1))
+                  in
+                    writeBack 0;
+                    doCol (c + 1)
+                  end
+            in
+              doCol 0;
+              result
+            end
+        end
+    end
+
+  (* Elementwise comparison of two matrices (array of rows) within eps. *)
+  fun approxArrArrC (xs, ys) =
+    Array.length xs = Array.length ys andalso
+    let
+      fun loop i =
+        i >= Array.length xs orelse
+        (approxArrC (Array.sub (xs, i), Array.sub (ys, i)) andalso loop (i + 1))
+    in
+      loop 0
+    end
+
+  (* Naive DCT-II oracle (direct sum): X[k] = sum_j x[j] cos(pi*(2j+1)*k/(2n)). *)
+  fun naiveDct (x : real array) =
+    let
+      val n = Array.length x
+      fun bin k =
+        let
+          fun loop (j, acc) =
+            if j >= n then acc
+            else
+              let
+                val ang = pi * real (2 * j + 1) * real k / real (2 * n)
+              in
+                loop (j + 1, acc + Array.sub (x, j) * Math.cos ang)
+              end
+        in
+          loop (0, 0.0)
+        end
+    in
+      Array.tabulate (n, bin)
+    end
+
   (* Energy helpers for Parseval. *)
   fun energyR (x : real array) =
     Array.foldl (fn (v, acc) => acc + v * v) 0.0 x
@@ -297,6 +370,67 @@ struct
           Harness.check "convolve(a,b) = naive (8 x 2)"
             (approxArrR (F.convolve (a, b), naiveConv (a, b)))
         end
+
+      (* ---- irfft recovers a real signal ---- *)
+      val () = Harness.section "irfft (inverse real FFT)"
+      val () =
+        List.app
+          (fn n =>
+            let
+              val x = signal n
+            in
+              Harness.check
+                ("irfft (rfft x) = x, n = " ^ Int.toString n)
+                (approxArrR (F.irfft (F.rfft x), x))
+            end)
+          [1, 2, 3, 4, 5, 6, 8, 9, 16]
+
+      (* ---- 2D transforms: fft2 == naive separable DFT, and round-trip ---- *)
+      val () = Harness.section "fft2 / ifft2 (separable 2D)"
+      val () =
+        List.app
+          (fn (rows, cols) =>
+            let
+              val m =
+                Array.tabulate (rows, fn r =>
+                  Array.tabulate (cols, fn c =>
+                    C.complex (0.5 + Math.sin (0.7 * real r + 0.3 * real c),
+                               Math.cos (0.2 * real r - 0.5 * real c))))
+            in
+              Harness.check
+                ("fft2 = naive 2D DFT, " ^ Int.toString rows ^ "x"
+                 ^ Int.toString cols)
+                (approxArrArrC (F.fft2 m, naiveDft2 m));
+              Harness.check
+                ("ifft2 (fft2 m) = m, " ^ Int.toString rows ^ "x"
+                 ^ Int.toString cols)
+                (approxArrArrC (F.ifft2 (F.fft2 m), m))
+            end)
+          [(1, 1), (2, 3), (3, 2), (4, 4), (2, 5), (6, 3)]
+      val () =
+        Harness.check "fft2 of empty matrix is empty"
+          (Array.length (F.fft2 (Array.fromList [])) = 0)
+
+      (* ---- DCT-II / DCT-III ---- *)
+      val () = Harness.section "dct / idct"
+      val () =
+        List.app
+          (fn n =>
+            let
+              val x = signal n
+            in
+              Harness.check
+                ("dct = naive DCT-II, n = " ^ Int.toString n)
+                (approxArrR (F.dct x, naiveDct x));
+              Harness.check
+                ("idct (dct x) = x, n = " ^ Int.toString n)
+                (approxArrR (F.idct (F.dct x), x))
+            end)
+          [1, 2, 3, 4, 5, 6, 8, 12]
+      val () =
+        Harness.check "dct [1,1,1,1] = [4,0,0,0]"
+          (approxArrR (F.dct (rarr [1.0, 1.0, 1.0, 1.0]),
+                       rarr [4.0, 0.0, 0.0, 0.0]))
 
       (* ---- edge cases ---- *)
       val () = Harness.section "Edge cases"

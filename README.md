@@ -11,7 +11,7 @@ byte-identically under both [MLton](http://mlton.org/) and
 
 ## Status
 
-- 34 assertions, green on MLton and Poly/ML.
+- 73 assertions, green on MLton and Poly/ML.
 - Basis-library only; deterministic across compilers.
 - Vendors `sml-complex` (Layout B), so the repo builds standalone.
 
@@ -73,6 +73,26 @@ ifft X : x[j] = (1/n) sum_{k=0}^{n-1} X[k] * exp(+2*pi*i*j*k/n)
 so `ifft (fft x) = x` up to rounding. `convolve (a, b)` returns the linear
 convolution of length `length a + length b - 1` (empty if either input is
 empty). An empty array transforms to an empty array.
+
+### More transforms
+
+```sml
+val irfft : Complex.t array -> real array              (* inverse real FFT     *)
+val fft2  : Complex.t array array -> Complex.t array array  (* 2D forward DFT   *)
+val ifft2 : Complex.t array array -> Complex.t array array  (* 2D inverse DFT   *)
+val dct   : real array -> real array                   (* DCT-II (unnormalized)*)
+val idct  : real array -> real array                   (* DCT-III, its inverse *)
+```
+
+- `irfft` is the real part of `ifft`, so `irfft (rfft x) = x` up to rounding.
+- `fft2`/`ifft2` treat a `Complex.t array array` as a row-major matrix and
+  transform along rows then columns (separable). `ifft2` is
+  `1/(rows*cols)`-normalized, so `ifft2 (fft2 m) = m`. Rectangular and empty
+  matrices are handled.
+- `dct` is the unnormalized type-II transform
+  `X[k] = sum_j x[j] cos(pi*(2j+1)*k/(2n))`; `idct` is the type-III transform
+  scaled by `1/n`, the exact inverse, so `idct (dct x) = x`. For example
+  `dct [1,1,1,1] = [4,0,0,0]`.
 
 ### Conventions
 

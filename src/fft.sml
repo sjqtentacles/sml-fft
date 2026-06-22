@@ -219,6 +219,113 @@ struct
   fun rfft (xs : real array) =
     fft (Array.tabulate (Array.length xs, fn i => C.complex (Array.sub (xs, i), 0.0)))
 
+  (* Real part of the inverse transform. *)
+  fun irfft (a : C.t array) =
+    let val x = ifft a
+    in Array.tabulate (Array.length x, fn i => C.re (Array.sub (x, i)))
+    end
+
+  (* Apply a 1D transform `t` to every row of a row-major matrix, then to every
+     column of the result. Shared by `fft2`/`ifft2`; the inverse's 1/n factor
+     applies once per axis, giving an overall 1/(rows*cols). *)
+  fun transform2 (t : C.t array -> C.t array) (m : C.t array array) =
+    let
+      val rows = Array.length m
+    in
+      if rows = 0 then Array.fromList []
+      else
+        let
+          val cols = Array.length (Array.sub (m, 0))
+        in
+          if cols = 0 then Array.tabulate (rows, fn _ => Array.fromList [])
+          else
+            let
+              (* transform each row *)
+              val rowT = Array.tabulate (rows, fn r => t (Array.sub (m, r)))
+              val result =
+                Array.tabulate (rows, fn _ => Array.array (cols, zero ()))
+              fun doCol c =
+                if c >= cols then ()
+                else
+                  let
+                    val col =
+                      t (Array.tabulate (rows, fn r =>
+                           Array.sub (Array.sub (rowT, r), c)))
+                    fun writeBack r =
+                      if r >= rows then ()
+                      else
+                        (Array.update (Array.sub (result, r), c,
+                                       Array.sub (col, r));
+                         writeBack (r + 1))
+                  in
+                    writeBack 0;
+                    doCol (c + 1)
+                  end
+            in
+              doCol 0;
+              result
+            end
+        end
+    end
+
+  fun fft2 m = transform2 fft m
+  fun ifft2 m = transform2 ifft m
+
+  (* DCT-II via a length-2n even (mirror) extension and one FFT. With
+     y = [x[0..n-1], x[n-1..0]] of length 2n and Y = fft y, one has
+     X[k] = Re(exp(-i*pi*k/(2n)) * Y[k]) / 2. *)
+  fun dct (x : real array) =
+    let
+      val n = Array.length x
+    in
+      if n = 0 then Array.fromList []
+      else
+        let
+          val y =
+            Array.tabulate
+              (2 * n, fn i =>
+                if i < n then C.complex (Array.sub (x, i), 0.0)
+                else C.complex (Array.sub (x, 2 * n - 1 - i), 0.0))
+          val capY = fft y
+          fun coef k =
+            let
+              val ang = ~pi * real k / real (2 * n)
+              val w = C.complex (Math.cos ang, Math.sin ang)
+            in
+              C.re (C.mul (w, Array.sub (capY, k))) / 2.0
+            end
+        in
+          Array.tabulate (n, coef)
+        end
+    end
+
+  (* DCT-III scaled by 1/n: the exact inverse of `dct` above. *)
+  fun idct (capX : real array) =
+    let
+      val n = Array.length capX
+    in
+      if n = 0 then Array.fromList []
+      else
+        let
+          val x0 = Array.sub (capX, 0)
+          fun out j =
+            let
+              fun loop (k, acc) =
+                if k >= n then acc
+                else
+                  let
+                    val ang = pi * real (2 * j + 1) * real k / real (2 * n)
+                  in
+                    loop (k + 1, acc + Array.sub (capX, k) * Math.cos ang)
+                  end
+            in
+              (x0 + 2.0 * loop (1, 0.0)) / real n
+            end
+        in
+          Array.tabulate (n, out)
+        end
+    end
+
   fun convolve (a : real array, b : real array) =
     let
       val la = Array.length a
