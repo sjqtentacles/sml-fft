@@ -1,5 +1,7 @@
 # sml-fft
 
+[![CI](https://github.com/sjqtentacles/sml-fft/actions/workflows/ci.yml/badge.svg)](https://github.com/sjqtentacles/sml-fft/actions/workflows/ci.yml)
+
 Fast Fourier transforms in pure Standard ML — `fft`/`ifft` over complex
 arrays, a real-input `rfft`, and FFT-based linear `convolve` — built on
 [`sml-complex`](https://github.com/sjqtentacles/sml-complex). Power-of-two
